@@ -1,4 +1,4 @@
-FROM bitnami/spark:3.5.2
+FROM apache/spark:3.5.2-scala2.12-java17-python3-ubuntu
 
 USER root
 
@@ -8,7 +8,8 @@ ARG AWS_SDK_VERSION=1.12.262
 ARG NESSIE_VERSION=0.95.0
 ARG SCALA_VERSION=2.12
 
-ENV SPARK_JARS_DIR=/opt/bitnami/spark/jars
+ENV SPARK_HOME=/opt/spark
+ENV SPARK_JARS_DIR=${SPARK_HOME}/jars
 
 RUN wget -q \
     "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_${SCALA_VERSION}/${ICEBERG_VERSION}/iceberg-spark-runtime-3.5_${SCALA_VERSION}-${ICEBERG_VERSION}.jar" \
@@ -33,9 +34,7 @@ RUN pip install --no-cache-dir \
     pandas==2.2.0 \
     pyarrow==17.0.0
 
-RUN mkdir -p /opt/spark/scripts && \
-    chown -R 1001:root /opt/spark/scripts
+RUN mkdir -p ${SPARK_HOME}/scripts && \
+    chown -R 185:0 ${SPARK_HOME}/scripts
 
-COPY spark-defaults.conf /opt/bitnami/spark/conf/spark-defaults.conf
-
-USER 1001
+COPY spark-defaults.conf ${SPARK_HOME}/conf/spark-defaults.conf

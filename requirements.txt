@@ -5,4 +5,4 @@ python-dotenv==1.0.1
 pyarrow==17.0.0
 pandas==2.2.2
 pyiceberg[s3fs,pyarrow]==0.7.1
-pyspark==3.5.0
+pyspark==3.5.2

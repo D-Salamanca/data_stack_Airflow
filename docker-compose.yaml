@@ -28,8 +28,6 @@
 #   5555  → Flower (perfil opcional)
 # ============================================================
 
----
-
 # ============================================================
 # ANCLA COMÚN — Configuración compartida de todos los
 # servicios de Airflow (webserver, scheduler, worker, etc.)
@@ -40,9 +38,10 @@ x-airflow-common:
     context: .
     dockerfile: Dockerfile.airflow
   image: fhbd-airflow:2.10.3
+  env_file:
+    - .env
   environment:
     &airflow-common-env
-    # --- Core Airflow ---
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
@@ -53,29 +52,22 @@ x-airflow-common:
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
 
-    # --- Conexión Spark (usada por SparkSubmitOperator) ---
-    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://spark-master:7077'
     SPARK_HOME: '/opt/spark'
 
-    # --- Credenciales MinIO (para pasarlas a los jobs de Spark) ---
-    MINIO_ENDPOINT: 'http://fhbd-minio:9000'
+    MINIO_ENDPOINT: '${MINIO_ENDPOINT:-http://fhbd-minio:9000}'
     MINIO_ACCESS_KEY: '${MINIO_ACCESS_KEY:-minioadmin}'
     MINIO_SECRET_KEY: '${MINIO_SECRET_KEY:-minioadmin123}'
-    MINIO_BUCKET_RAW: 'raw'
-    MINIO_BUCKET_ICEBERG: 'iceberg'
+    MINIO_BUCKET_RAW: '${MINIO_BUCKET_RAW:-raw}'
+    MINIO_BUCKET_ICEBERG: '${MINIO_BUCKET_ICEBERG:-iceberg}'
 
-    # --- Nessie ---
-    NESSIE_URL: 'http://fhbd-nessie:19120/iceberg'
-    NESSIE_BRANCH: 'main'
+    NESSIE_URL: '${NESSIE_URL:-http://fhbd-nessie:19120/api/v1}'
+    NESSIE_BRANCH: '${NESSIE_BRANCH:-main}'
 
-    # --- Iceberg ---
-    ICEBERG_NAMESPACE: 'nyc'
-    ICEBERG_TABLE: 'yellow_tripdata'
+    ICEBERG_NAMESPACE: '${ICEBERG_NAMESPACE:-nyc}'
+    ICEBERG_TABLE: '${ICEBERG_TABLE:-yellow_tripdata}'
 
-    # --- Datos de entrada ---
-    PARQUET_URL: 'https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet'
+    PARQUET_URL: '${PARQUET_URL:-https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet}'
 
-    # --- PIP adicional (solo para pruebas rápidas) ---
     _PIP_ADDITIONAL_REQUIREMENTS: '${_PIP_ADDITIONAL_REQUIREMENTS:-}'
 
   volumes:
@@ -84,7 +76,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
-    - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts   # Scripts Spark accesibles desde workers
+    - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/airflow/scripts
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -94,7 +86,6 @@ x-airflow-common:
       condition: service_healthy
   networks:
     - fhbd-network
-
 
 # ============================================================
 # SERVICIOS
@@ -300,7 +291,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.spark
-    image: fhbd-spark:3.5.3
+    image: fhbd-spark:3.5.2
     container_name: fhbd-spark-master
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8081
     environment:
@@ -313,7 +304,7 @@ services:
       - "7077:7077"   # Spark submit port
       - "8081:8081"   # Spark Master Web UI
     volumes:
-      - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/spark/scripts   # Scripts del pipeline
+      - ${AIRFLOW_PROJ_DIR:-.}/scripts:/opt/spark/scripts
       - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/spark/data
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8081"]
@@ -332,7 +323,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.spark
-    image: fhbd-spark:3.5.3
+    image: fhbd-spark:3.5.2
     container_name: fhbd-spark-worker
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --webui-port 8082
     environment:
@@ -351,7 +342,6 @@ services:
       - fhbd-network
     depends_on:
       - spark-master
-
 
   # ----------------------------------------------------------
   # ALMACENAMIENTO — MinIO (S3-compatible)
@@ -406,7 +396,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - AWS_REGION=us-east-1
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:19120/api/v2/config"]
+      test: ["CMD", "curl", "--fail", "http://localhost:19120/api/v1/config"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -464,7 +454,7 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
 
       # Nessie
-      - NESSIE_URL=http://fhbd-nessie:19120/iceberg
+      - NESSIE_URL=http://fhbd-nessie:19120/api/v1
       - NESSIE_BRANCH=main
 
       # Iceberg
